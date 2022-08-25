@@ -48,7 +48,7 @@ async fn main() -> io::Result<()> {
     });
 
     while !STOP.load(Ordering::Relaxed) {
-        let (mut socket, _) = listner.accept().await?;
+        let (socket, _) = listner.accept().await?;
         let printer = inner_counter.clone();
 
         printer.fetch_add(1, Ordering::Relaxed);
