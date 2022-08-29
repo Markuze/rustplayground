@@ -2,9 +2,9 @@ use clap::Parser;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::io;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
+use tokio::io::AsyncWriteExt;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
@@ -19,7 +19,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> tokio::io::Result<()> {
     let args = Args::parse();
 
     let listner = {
@@ -40,7 +40,7 @@ async fn main() -> io::Result<()> {
             tokio::time::sleep(Duration::from_millis(100)).await;
             let conn = counter.load(Ordering::Relaxed);
 
-            if conn > 1 {
+            if conn > 0 {
                 println!("{conn} connections in last epoch\n");
                 counter.store(0, Ordering::SeqCst);
             }
@@ -48,17 +48,20 @@ async fn main() -> io::Result<()> {
     });
 
     while !STOP.load(Ordering::Relaxed) {
-        let (socket, _) = listner.accept().await?;
+        let (mut socket, _) = listner.accept().await?;
         let printer = inner_counter.clone();
 
         printer.fetch_add(1, Ordering::Relaxed);
-        //tokio::spawn(async move {
-        println!(
-            "connection from {:?} - {}",
-            socket,
-            printer.load(Ordering::Relaxed)
-        );
-        //});
+        tokio::spawn(async move {
+                socket.write_all(b"Hello World!\n").await?;
+
+                println!(
+                "connection from {:?} - {}",
+                socket,
+                printer.load(Ordering::Relaxed)
+                );
+                Ok::<_, tokio::io::Error>(())
+        });
     }
     Ok(())
 }

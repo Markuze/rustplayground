@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::io;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -32,7 +33,17 @@ async fn main() -> io::Result<()> {
         }
     };
 
-    let mut _stream = TcpStream::connect(&*addr.clone()).await?;
+    let mut stream = TcpStream::connect(&*addr.clone()).await?;
+    let mut buf = vec![0;256];
+    let n = stream.read(&mut buf).await?;
+
+    if n > 0 {
+        //this is fucking ugly but I'm lazy...
+        println!("Got: {:?}", String::from_utf8((&buf[..n]).to_vec()).unwrap());
+    } else {
+        println!("Huston...");
+    }
+
 
     if args.load {
         while !STOP.load(Ordering::Relaxed) {
