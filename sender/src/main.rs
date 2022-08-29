@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::io;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
+use quanta::Clock;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
@@ -33,7 +34,9 @@ async fn main() -> io::Result<()> {
         }
     };
 
-    let mut stream = TcpStream::connect(&*addr.clone()).await?;
+    let mut _stream = TcpStream::connect(&*addr.clone()).await?;
+
+    /*
     let mut buf = vec![0;256];
     let n = stream.read(&mut buf).await?;
 
@@ -43,7 +46,7 @@ async fn main() -> io::Result<()> {
     } else {
         println!("Huston...");
     }
-
+    */
 
     if args.load {
         while !STOP.load(Ordering::Relaxed) {

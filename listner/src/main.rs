@@ -55,11 +55,11 @@ async fn main() -> tokio::io::Result<()> {
         tokio::spawn(async move {
                 socket.write_all(b"Hello World!\n").await?;
 
-                println!(
-                "connection from {:?} - {}",
-                socket,
-                printer.load(Ordering::Relaxed)
-                );
+               //println!(
+               //"connection from {:?} - {}",
+               //socket,
+               //printer.load(Ordering::Relaxed)
+               //);
                 Ok::<_, tokio::io::Error>(())
         });
     }
