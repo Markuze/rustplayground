@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
-use tokio::io::AsyncWriteExt;
+//use tokio::io::AsyncWriteExt;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
@@ -37,7 +37,7 @@ async fn main() -> tokio::io::Result<()> {
 
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(1000)).await;
             let conn = counter.load(Ordering::Relaxed);
 
             if conn > 0 {
@@ -48,10 +48,11 @@ async fn main() -> tokio::io::Result<()> {
     });
 
     while !STOP.load(Ordering::Relaxed) {
-        let (mut socket, _) = listner.accept().await?;
-        let printer = inner_counter.clone();
+        let (mut _socket, _) = listner.accept().await?;
 
-        printer.fetch_add(1, Ordering::Relaxed);
+        inner_counter.fetch_add(1, Ordering::Relaxed);
+        /*
+        let printer = inner_counter.clone();
         tokio::spawn(async move {
                 socket.write_all(b"Hello World!\n").await?;
 
@@ -62,6 +63,7 @@ async fn main() -> tokio::io::Result<()> {
                //);
                 Ok::<_, tokio::io::Error>(())
         });
+        */
     }
     Ok(())
 }

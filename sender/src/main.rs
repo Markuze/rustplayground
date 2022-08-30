@@ -1,11 +1,11 @@
 use clap::Parser;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io;
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use quanta::Clock;
+use tokio::time::Duration;
+//use tokio::io::AsyncReadExt;
+//use quanta::Clock;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
@@ -48,13 +48,42 @@ async fn main() -> io::Result<()> {
     }
     */
 
+    let inner_counter = Arc::new(AtomicU64::new(0));
+    let inner_err_counter = Arc::new(AtomicU64::new(0));
+    let inner_conn_counter = Arc::new(AtomicU64::new(0));
+
+    let counter = inner_counter.clone();
+    let con_at = inner_conn_counter.clone();
+    let con_err = inner_err_counter.clone();
+
     if args.load {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+                let conn = counter.load(Ordering::Relaxed);
+                let attempt = con_at.load(Ordering::Relaxed);
+                let err = con_err.load(Ordering::Relaxed);
+
+                println!("Approx: {conn}/{attempt} connections in last sec, {err} errors");
+                counter.fetch_sub(attempt, Ordering::SeqCst);
+                con_at.fetch_sub(attempt, Ordering::SeqCst);
+                con_err.fetch_sub(err, Ordering::SeqCst);
+            }
+        });
+
         while !STOP.load(Ordering::Relaxed) {
             let daddr = addr.clone();
+            let con_at = inner_conn_counter.clone();
+            let con_err = inner_err_counter.clone();
+
+            inner_counter.fetch_add(1, Ordering::Relaxed);
+
             tokio::spawn(async move {
                 let stream = TcpStream::connect(&*daddr).await;
-                if let Err(e) = stream {
-                    println!("Failed to connect {:?}\n", e);
+                if let Err(_e) = stream {
+                    con_err.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    con_at.fetch_add(1, Ordering::Relaxed);
                 }
             });
         }
