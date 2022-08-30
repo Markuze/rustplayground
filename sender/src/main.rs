@@ -9,7 +9,10 @@ use num_format::{Buffer, Locale};
 //use quanta::Clock;
 
 static STOP: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_arch = "x86_64"))]
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
+#[cfg(target_arch = "x86_64")]
+const DEFAULT_ADDR: &str = "10.100.62.151:6180";
 
 /// TCP sender
 #[derive(Parser, Debug)]
@@ -79,8 +82,9 @@ async fn main() -> io::Result<()> {
             let con_at = inner_conn_counter.clone();
             let con_err = inner_err_counter.clone();
 
-            inner_counter.fetch_add(1, Ordering::Relaxed);
 
+            tokio::time::sleep(Duration::from_millis(1)).await; // Limit to 500 connections per sec
+            inner_counter.fetch_add(1, Ordering::Relaxed);
             tokio::spawn(async move {
                 let stream = TcpStream::connect(&*daddr).await;
                 if let Err(_e) = stream {

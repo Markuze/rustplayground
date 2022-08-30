@@ -7,7 +7,10 @@ use tokio::time::Duration;
 //use tokio::io::AsyncWriteExt;
 
 static STOP: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_arch = "x86_64"))]
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
+#[cfg(target_arch = "x86_64")]
+const DEFAULT_ADDR: &str = "0.0.0.0:6181";
 
 /// TCP listner
 #[derive(Parser, Debug)]
