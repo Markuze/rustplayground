@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::io;
 use tokio::net::TcpStream;
 use tokio::time::Duration;
+use num_format::{Buffer, Locale};
 //use tokio::io::AsyncReadExt;
 //use quanta::Clock;
 
@@ -61,11 +62,13 @@ async fn main() -> io::Result<()> {
             loop {
                 tokio::time::sleep(Duration::from_millis(1000)).await;
                 let conn = counter.load(Ordering::Relaxed);
+                let mut conn_buffer = Buffer::default();
                 let attempt = con_at.load(Ordering::Relaxed);
                 let err = con_err.load(Ordering::Relaxed);
 
-                println!("Approx: {conn}/{attempt} connections in last sec, {err} errors");
-                counter.fetch_sub(attempt, Ordering::SeqCst);
+                conn_buffer.write_formatted(&conn, &Locale::en);
+                println!("Approx: {attempt}/{} connections in last sec, {err} errors", conn_buffer.as_str());
+                counter.fetch_sub(conn, Ordering::SeqCst);
                 con_at.fetch_sub(attempt, Ordering::SeqCst);
                 con_err.fetch_sub(err, Ordering::SeqCst);
             }
