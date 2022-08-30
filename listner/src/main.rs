@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
-//use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncWriteExt;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 #[cfg(not(target_arch = "x86_64"))]
@@ -51,22 +51,25 @@ async fn main() -> tokio::io::Result<()> {
     });
 
     while !STOP.load(Ordering::Relaxed) {
-        let (mut _socket, _) = listner.accept().await?;
+        let (mut socket, _) = listner.accept().await?;
 
-        inner_counter.fetch_add(1, Ordering::Relaxed);
-        /*
-        let printer = inner_counter.clone();
-        tokio::spawn(async move {
-                socket.write_all(b"Hello World!\n").await?;
+        let load = inner_counter.fetch_add(1, Ordering::Relaxed);
 
-               //println!(
-               //"connection from {:?} - {}",
-               //socket,
-               //printer.load(Ordering::Relaxed)
-               //);
-                Ok::<_, tokio::io::Error>(())
-        });
-        */
+        if load < 32 {
+            //let printer = inner_counter.clone();
+            tokio::spawn(async move {
+                    socket.write_all(b"Hello World!\n").await?;
+
+                   println!(
+                       "connection from {:?} - {}",
+                   socket, load,
+                   //printer.load(Ordering::Relaxed)
+                   );
+                    Ok::<_, tokio::io::Error>(())
+            });
+            //let the reply run
+            tokio::task::yield_now().await;
+        }
     }
     Ok(())
 }
