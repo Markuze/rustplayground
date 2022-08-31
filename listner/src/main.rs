@@ -55,7 +55,7 @@ async fn main() -> tokio::io::Result<()> {
 
         let load = inner_counter.fetch_add(1, Ordering::Relaxed);
 
-        if load < 32 {
+        if load < 8 {
             //let printer = inner_counter.clone();
             tokio::spawn(async move {
                     socket.write_all(b"Hello World!\n").await?;

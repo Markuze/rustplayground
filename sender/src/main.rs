@@ -26,18 +26,23 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = false)]
     load: bool,
 
-    #[clap(short, long, value_parser, default_value_t = 1)]
+    #[clap(short, long, value_parser, default_value_t = 0)]
     burst: u16,
+
+    #[clap(short, long, value_parser, default_value_t = 128)]
+    hertz : u16,
 }
 
 async fn burst_target(addr: Arc<String>, burst: u16 ) {
 
-        let inner_counter = Arc::new(AtomicU64::new(0));
+        let inner_counter = Arc::new(AtomicU64::new(1));
+        let ack_counter = Arc::new(AtomicU64::new(0));
         let done = Arc::new(Event::new());
         let listner = done.listen();
 
         for i in 0..burst {
             let counter = inner_counter.clone();
+            let ack = ack_counter.clone();
             let daddr = addr.clone();
             let done = done.clone();
 
@@ -59,14 +64,16 @@ async fn burst_target(addr: Arc<String>, burst: u16 ) {
 
                 if n > 0 {
                     //this is fucking ugly but I'm lazy...
-                    println!("{curr}: Got: {:?}", String::from_utf8((&buf[..n]).to_vec()).unwrap());
-                }
-                /*else {
-                    println!("Huston...");
+                    println!("{curr}/{}:{}: Got: {:?}", burst, ack.fetch_add(1, Ordering::Relaxed), String::from_utf8((&buf[..n]).to_vec()).unwrap());
+                } /*else {
+                    println!("{curr}/{}:{}: Silent", burst, ack.load(Ordering::Relaxed));
                 }*/
+
                 if curr == burst.into() {
+                    println!("{} cya cowboy!\n", curr);
                     done.notify(1);
                 }
+
                 Ok::<_, tokio::io::Error>(())
             });
         }
@@ -78,7 +85,7 @@ async fn burst_target(addr: Arc<String>, burst: u16 ) {
         //}
 }
 
-async fn load_target(addr: Arc<String>) {
+async fn load_target(addr: Arc<String>, step: u64) {
     let inner_counter = Arc::new(AtomicU64::new(0));
     let inner_err_counter = Arc::new(AtomicU64::new(0));
     let inner_conn_counter = Arc::new(AtomicU64::new(0));
@@ -109,7 +116,7 @@ async fn load_target(addr: Arc<String>) {
         let con_err = inner_err_counter.clone();
 
 
-        tokio::time::sleep(Duration::from_millis(1)).await; // Limit to 500 connections per sec
+        tokio::time::sleep(Duration::from_millis(step)).await; // Limit to 500 connections per sec
         inner_counter.fetch_add(1, Ordering::Relaxed);
         tokio::spawn(async move {
             let stream = TcpStream::connect(&*daddr).await;
@@ -136,10 +143,13 @@ async fn main() -> io::Result<()> {
 
     let mut _stream = TcpStream::connect(&*addr.clone()).await?;
 
-    if args.load {
-        load_target(addr.clone()).await;
-    } else {
+    if args.burst > 0 {
         burst_target(addr.clone(), args.burst).await;
+    }
+
+    if args.load {
+        let step = 1000 / args.hertz;
+        load_target(addr.clone(), step as u64).await;
     }
 
     Ok(())
