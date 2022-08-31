@@ -11,7 +11,7 @@ use num_format::{Buffer, Locale};
 //use quanta::Clock;
 
 static STOP: AtomicBool = AtomicBool::new(false);
-static bytesin: AtomicU64 = AtomicU64::new(0);
+static BYTESIN: AtomicU64 = AtomicU64::new(0);
 #[cfg(not(target_arch = "x86_64"))]
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
 #[cfg(target_arch = "x86_64")]
@@ -32,15 +32,20 @@ struct Args {
     stream: bool,
 
     #[clap(short, long, value_parser, default_value_t = 0)]
+    cap: u64,
+
+    #[clap(short, long, value_parser, default_value_t = 0)]
     burst: u16,
 
     #[clap(short, long, value_parser, default_value_t = 128.0)]
     hertz : f64,
 }
 
-async fn stream_rx(addr: Arc<String>)  -> io::Result<()> {
+async fn stream_rx(addr: Arc<String>, cap :u64)  -> io::Result<()> {
     let mut buf = BytesMut::with_capacity(4096);
     let mut stream = TcpStream::connect(&*addr).await?;
+    let mut total  = 0;
+
     stream.write_all(b"Gimme some Bytes World!\n").await?;
 
     loop {
@@ -49,8 +54,14 @@ async fn stream_rx(addr: Arc<String>)  -> io::Result<()> {
             println!("RX Stream out");
             return Ok::<(), tokio::io::Error>(());
         }
+        total += n;
+        if total >= cap as usize {
+            println!("RX Stream Done {total}/{cap}");
+            return Ok::<(), tokio::io::Error>(());
+        }
+
         buf.clear();
-        bytesin.fetch_add(n as u64,  Ordering::Relaxed);
+        BYTESIN.fetch_add(n as u64,  Ordering::Relaxed);
     }
 }
 
@@ -124,7 +135,7 @@ async fn load_target(addr: Arc<String>, step: u64) {
     let con_at = inner_conn_counter.clone();
     let con_err = inner_err_counter.clone();
 
-    //let bytesin = BytesIN.clone();
+    //let BYTESIN = BytesIN.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -135,7 +146,7 @@ async fn load_target(addr: Arc<String>, step: u64) {
 
             conn_buffer.write_formatted(&conn, &Locale::en);
 
-            let rx_bytes = bytesin.load(Ordering::Relaxed);
+            let rx_bytes = BYTESIN.load(Ordering::Relaxed);
             let mut bytes = Buffer::default();
             bytes.write_formatted(&rx_bytes, &Locale::en);
 
@@ -144,7 +155,7 @@ async fn load_target(addr: Arc<String>, step: u64) {
             counter.fetch_sub(conn, Ordering::SeqCst);
             con_at.fetch_sub(attempt, Ordering::SeqCst);
             con_err.fetch_sub(err, Ordering::SeqCst);
-            bytesin.fetch_sub(rx_bytes, Ordering::SeqCst);
+            BYTESIN.fetch_sub(rx_bytes, Ordering::SeqCst);
         }
     });
 
@@ -186,7 +197,7 @@ async fn main() -> io::Result<()> {
     }
 
     if args.stream {
-        tokio::spawn(stream_rx(addr.clone()));
+        tokio::spawn(stream_rx(addr.clone(), args.cap));
     }
 
     if args.load {

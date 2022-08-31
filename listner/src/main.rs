@@ -72,10 +72,11 @@ async fn main() -> tokio::io::Result<()> {
                                return Err(e.into());
                            }
                            Ok(0) => {break}
-                           Ok(_n) => {
+                           Ok(n) => {
                                if &buffer[..13] == b"Hello World!\n" {
                                     socket.write_all(b"Hello World!\n").await?;
                                } else {
+                                   let mut total = 0;
                                    loop {
                                         let mut buffer = BytesMut::with_capacity(4096);
                                         unsafe {
@@ -83,9 +84,11 @@ async fn main() -> tokio::io::Result<()> {
                                         }
                                         let m = socket.write_buf(&mut buffer).await?;
                                         if m == 0 {
+                                            println!("{n} In. Sent {total} Bytes");
                                             break;
+                                        } else {
+                                            total += m;
                                         }
-                                        //println!("{n} In. Sent {m} Bytes");
                                     }
 
                                }
