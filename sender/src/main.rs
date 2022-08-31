@@ -1,12 +1,13 @@
-use clap::Parser;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::io;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::Duration;
-use num_format::{Buffer, Locale};
-use tokio::io::AsyncReadExt;
 use event_listener::Event;
+use clap::Parser;
+use bytes::BytesMut;
+use num_format::{Buffer, Locale};
 //use quanta::Clock;
 
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -57,9 +58,13 @@ async fn burst_target(addr: Arc<String>, burst: u16 ) {
                     }
                     return Err(e);
                 }
+                let mut stream = stream?;
+                let mut buf = BytesMut::with_capacity(4096);
 
-                let mut buf = vec![0;256];
-                let n = stream?.read(&mut buf).await?;
+                _ = stream.set_nodelay(true);
+                //println!("{:?} Connected to {:?}", stream.local_addr(), stream.peer_addr());
+                stream.write_all(b"Hello World!\n").await?;
+                let n = stream.read_buf(&mut buf).await?;
                 let curr = counter.fetch_add(1, Ordering::Relaxed);
 
                 if n > 0 {
@@ -76,6 +81,7 @@ async fn burst_target(addr: Arc<String>, burst: u16 ) {
 
                 Ok::<_, tokio::io::Error>(())
             });
+            tokio::task::yield_now().await;
         }
 
         listner.await;

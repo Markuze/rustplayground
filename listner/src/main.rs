@@ -1,10 +1,12 @@
-use clap::Parser;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::io;
 use std::sync::Arc;
+//use std::error::Error;
+use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use tokio::io::{AsyncWriteExt, AsyncReadExt, Interest};
 use tokio::net::TcpListener;
 use tokio::time::Duration;
-use tokio::io::AsyncWriteExt;
+use bytes::BytesMut;
+use clap::Parser;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 #[cfg(not(target_arch = "x86_64"))]
@@ -51,23 +53,38 @@ async fn main() -> tokio::io::Result<()> {
     });
 
     while !STOP.load(Ordering::Relaxed) {
+        let mut buffer = BytesMut::with_capacity(4096);
         let (mut socket, _) = listner.accept().await?;
 
         let load = inner_counter.fetch_add(1, Ordering::Relaxed);
 
         if load < 8 {
-            //let printer = inner_counter.clone();
             tokio::spawn(async move {
+                    println!("connection from {:?} - {}", socket, load);
+
+                    for _ in 0..128 {
+                        //let _ = socket.ready(Interest::READABLE).await?;
+                        match socket.try_read_buf(&mut buffer) {
+                           Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                              tokio::task::yield_now().await;
+                           }
+                           Err(e) => {
+                               return Err(e.into());
+                           }
+                           Ok(0) => {break}
+                           Ok(n) => {
+                               if &buffer[..13] == b"Hello World!\n" {
+                                   println!("Hello received");
+                               } else {
+                                   println!("What did I receive? {n}");
+                               }
+                           }
+                        }
+                    }
                     socket.write_all(b"Hello World!\n").await?;
 
-                   println!(
-                       "connection from {:?} - {}",
-                   socket, load,
-                   //printer.load(Ordering::Relaxed)
-                   );
                     Ok::<_, tokio::io::Error>(())
             });
-            //let the reply run
             tokio::task::yield_now().await;
         }
     }
