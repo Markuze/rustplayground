@@ -11,6 +11,7 @@ use num_format::{Buffer, Locale};
 //use quanta::Clock;
 
 static STOP: AtomicBool = AtomicBool::new(false);
+static bytesin: AtomicU64 = AtomicU64::new(0);
 #[cfg(not(target_arch = "x86_64"))]
 const DEFAULT_ADDR: &str = "127.0.0.1:6142";
 #[cfg(target_arch = "x86_64")]
@@ -27,11 +28,30 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = false)]
     load: bool,
 
+    #[clap(short, long, value_parser, default_value_t = false)]
+    stream: bool,
+
     #[clap(short, long, value_parser, default_value_t = 0)]
     burst: u16,
 
-    #[clap(short, long, value_parser, default_value_t = 128)]
-    hertz : u16,
+    #[clap(short, long, value_parser, default_value_t = 128.0)]
+    hertz : f64,
+}
+
+async fn stream_rx(addr: Arc<String>)  -> io::Result<()> {
+    let mut buf = BytesMut::with_capacity(4096);
+    let mut stream = TcpStream::connect(&*addr).await?;
+    stream.write_all(b"Gimme some Bytes World!\n").await?;
+
+    loop {
+        let n = stream.read_buf(&mut buf).await?;
+        if n == 0 {
+            println!("RX Stream out");
+            return Ok::<(), tokio::io::Error>(());
+        }
+        buf.clear();
+        bytesin.fetch_add(n as u64,  Ordering::Relaxed);
+    }
 }
 
 async fn burst_target(addr: Arc<String>, burst: u16 ) {
@@ -68,8 +88,12 @@ async fn burst_target(addr: Arc<String>, burst: u16 ) {
                 let curr = counter.fetch_add(1, Ordering::Relaxed);
 
                 if n > 0 {
-                    //this is fucking ugly but I'm lazy...
-                    println!("{curr}/{}:{}: Got: {:?}", burst, ack.fetch_add(1, Ordering::Relaxed), String::from_utf8((&buf[..n]).to_vec()).unwrap());
+                    //this is fucking ugly...
+                    if n < 16 {
+                        println!("{curr}/{}:{}: Got: {:?}", burst, ack.fetch_add(1, Ordering::Relaxed), String::from_utf8((&buf[..n]).to_vec()).unwrap());
+                    } else {
+                        println!("{curr}/{}:{}: Received: {n} bytes", burst, ack.fetch_add(1, Ordering::Relaxed));
+                    }
                 } /*else {
                     println!("{curr}/{}:{}: Silent", burst, ack.load(Ordering::Relaxed));
                 }*/
@@ -100,6 +124,7 @@ async fn load_target(addr: Arc<String>, step: u64) {
     let con_at = inner_conn_counter.clone();
     let con_err = inner_err_counter.clone();
 
+    //let bytesin = BytesIN.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -109,10 +134,17 @@ async fn load_target(addr: Arc<String>, step: u64) {
             let err = con_err.load(Ordering::Relaxed);
 
             conn_buffer.write_formatted(&conn, &Locale::en);
-            println!("Approx: {attempt}/{} connections in last sec, {err} errors", conn_buffer.as_str());
+
+            let rx_bytes = bytesin.load(Ordering::Relaxed);
+            let mut bytes = Buffer::default();
+            bytes.write_formatted(&rx_bytes, &Locale::en);
+
+            println!("Approx: {attempt}/{} connections in last sec, {err} errors: BytesIN {}", conn_buffer.as_str(), bytes.as_str());
+
             counter.fetch_sub(conn, Ordering::SeqCst);
             con_at.fetch_sub(attempt, Ordering::SeqCst);
             con_err.fetch_sub(err, Ordering::SeqCst);
+            bytesin.fetch_sub(rx_bytes, Ordering::SeqCst);
         }
     });
 
@@ -122,7 +154,7 @@ async fn load_target(addr: Arc<String>, step: u64) {
         let con_err = inner_err_counter.clone();
 
 
-        tokio::time::sleep(Duration::from_millis(step)).await; // Limit to 500 connections per sec
+        tokio::time::sleep(Duration::from_millis(step)).await;
         inner_counter.fetch_add(1, Ordering::Relaxed);
         tokio::spawn(async move {
             let stream = TcpStream::connect(&*daddr).await;
@@ -153,8 +185,12 @@ async fn main() -> io::Result<()> {
         burst_target(addr.clone(), args.burst).await;
     }
 
+    if args.stream {
+        tokio::spawn(stream_rx(addr.clone()));
+    }
+
     if args.load {
-        let step = 1000 / args.hertz;
+        let step = 1000.0 / args.hertz;
         load_target(addr.clone(), step as u64).await;
     }
 
